@@ -99,7 +99,8 @@ def check_node(osn):
 # ------------------------------------------------------------------ 3. python + venv
 def base_python():
     """The interpreter to build the venv with: this one when it is 3.10+, otherwise a newer one on PATH, otherwise
-    this one anyway when it is 3.9 (the old setup.sh used whatever `python3` was, and 3.9 still works)."""
+    this one anyway when it is 3.9 (the old setup.sh used whatever `python3` was). Pillow 13 needs 3.11; an older
+    interpreter fails the pip install below and the error line asks for a newer Python."""
     if sys.version_info[:2] >= skillenv.MIN_PY:
         return sys.executable, sys.version_info[:2]
     for minor in range(14, 9, -1):
@@ -114,15 +115,31 @@ def base_python():
 # Versions are pinned so a new upstream release cannot break installs (same pins as the setup.sh hotfix). PyAV 19
 # (2026-09-29) removed the `metadata_errors` argument that faster-whisper 1.2.1 still passes, so every transcription
 # crashed on fresh installs. A venv that already has PyAV 19 fails the self-test below and is repaired in place.
-REQUIREMENTS = ['faster-whisper==1.2.1', 'av>=11,<19', 'pillow']
-# imports alone did not catch the PyAV break: decode a tenth of a second of silence the way a transcription does
+# Pillow < 13.0.0 is CVE-2026-112900 (Ghostscript argument injection on an EPS filename). The self-test rejects it
+# so an existing venv is upgraded on the next run. headpos.py only uses Image.open, convert('L'), load, point and
+# getbbox; Pillow 13 did not change those calls (getbbox only got faster, and its alpha-only default does not apply
+# to mode L).
+REQUIREMENTS = ['faster-whisper==1.2.1', 'av>=11,<19', 'pillow>=13.0.0']
+# imports alone did not catch the PyAV break: decode a tenth of a second of silence the way a transcription does,
+# and run the same Pillow calls headpos.py uses on a one-pixel mask
 VENV_SELFTEST = r'''
-import os, tempfile, wave
-import PIL
+import io, os, tempfile, wave
+from PIL import Image
 from faster_whisper.audio import decode_audio
+if int(Image.__version__.split('.')[0]) < 13:
+    raise SystemExit(1)
 d = tempfile.mkdtemp(); p = os.path.join(d, 't.wav')
 w = wave.open(p, 'wb'); w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000); w.writeframes(b'\0\0' * 1600); w.close()
 try:
+    raw = io.BytesIO()
+    im = Image.new('L', (4, 4), 0)
+    im.putpixel((1, 2), 200)
+    im.save(raw, 'PNG')
+    raw.seek(0)
+    im = Image.open(raw).convert('L')
+    px, (wdt, hgt) = im.load(), im.size
+    assert px[1, 2] > 128 and (wdt, hgt) == (4, 4)
+    assert im.point(lambda v: 255 if v > 128 else 0).getbbox() == (1, 2, 2, 3)
     decode_audio(p)
 finally:
     os.remove(p); os.rmdir(d)
