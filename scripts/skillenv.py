@@ -27,7 +27,7 @@ PLATFORM_FILE = os.path.join(SKILL_DIR, '.platform.json')
 HYPERFRAMES = 'hyperframes@0.8.34'
 MIN_NODE = 22
 MIN_PY = (3, 10)      # what the README asks for
-OLDEST_PY = (3, 9)    # what the pinned packages still install on (the system Python of many Macs); never refused
+OLDEST_PY = (3, 9)    # never refused (system Python on many Macs). Pillow >= 13 needs 3.11; pip then asks for a newer Python
 SCHEMA = 1
 # subprocess.run(..., **TEXT): capture output as UTF-8 text. Plain text mode decodes with the Windows code page
 # (cp1252) and crashes on ffmpeg printing a file name like "Angel" with an accented A.
